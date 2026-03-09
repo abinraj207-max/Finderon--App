@@ -17,7 +17,7 @@ from gradcam import generate_gradcam
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # 🔹 GOOGLE FACT CHECK API KEY
-GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY"
+GOOGLE_API_KEY = "AIzaSyDrUzhbT6CjFG6GA7Hh2G5FNledMb4xW68"
 
 app = Flask(__name__, static_folder="static")
 CORS(app)
