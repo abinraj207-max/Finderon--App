@@ -1,9 +1,6 @@
 flask
 flask-cors
 torch==2.2.2
-torchvision==0.17.2
-
-opencv-python-headless
 pytesseract
 pillow
 requests
