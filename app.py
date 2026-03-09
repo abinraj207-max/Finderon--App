@@ -6,14 +6,28 @@ from PIL import Image
 import cv2
 import os
 import uuid
+import pickle
+import requests
+import pytesseract
 
 from model_loader import load_model
 from gradcam import generate_gradcam
 
-app = Flask(__name__)
+# 🔹 SET YOUR TESSERACT PATH (Windows only)
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+# 🔹 GOOGLE FACT CHECK API KEY
+GOOGLE_API_KEY = "YOUR_GOOGLE_API_KEY"
+
+app = Flask(__name__, static_folder="static")
 CORS(app)
 
+# 🔹 Load Image Model
 model = load_model()
+
+# 🔹 Load Fake News NLP Model
+news_model = pickle.load(open("model/fake_news_model.pkl", "rb"))
+vectorizer = pickle.load(open("model/vectorizer.pkl", "rb"))
 
 UPLOAD_FOLDER = "static/uploads"
 OUTPUT_FOLDER = "static/outputs"
@@ -26,14 +40,61 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
+# ---------------- HOME ----------------
 @app.route("/")
 def home():
     return "Finderon Backend Running 🚀"
 
+# ---------------- SERVE MARKED IMAGE ----------------
 @app.route("/outputs/<filename>")
 def get_image(filename):
     return send_from_directory(OUTPUT_FOLDER, filename)
 
+# ---------------- FACT CHECK FUNCTION ----------------
+def verify_fact(claim_text):
+    url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
+
+    params = {
+        "query": claim_text,
+        "key": GOOGLE_API_KEY,
+        "languageCode": "en"
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    if "claims" not in data:
+        return None
+
+    claim = data["claims"][0]
+    review = claim["claimReview"][0]
+
+    return {
+        "claim": claim["text"],
+        "publisher": review["publisher"]["name"],
+        "rating": review["textualRating"],
+        "review_url": review["url"]
+    }
+
+# ---------------- NEWS PREDICTION FUNCTION ----------------
+def predict_news(text):
+    text_vector = vectorizer.transform([text])
+    prediction = news_model.predict(text_vector)[0]
+    probability = news_model.predict_proba(text_vector)[0]
+
+    confidence = max(probability) * 100
+
+    if prediction == 1:
+        result = "Real"
+    else:
+        result = "Fake"
+
+    return {
+        "result": result,
+        "confidence": round(confidence, 2)
+    }
+
+# ---------------- MAIN ANALYZE ROUTE ----------------
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
@@ -51,32 +112,37 @@ def analyze():
 
         tensor = transform(image).unsqueeze(0)
 
-        # Prediction
+        # 🔹 IMAGE AI PREDICTION
         with torch.no_grad():
             output = model(tensor)
             probs = torch.softmax(output, dim=1)
             confidence, pred = torch.max(probs, 1)
 
-        result = "Fake" if pred.item() == 0 else "Real"
-        confidence_percent = round(confidence.item() * 100, 2)
+        image_result = "Fake" if pred.item() == 0 else "Real"
+        image_confidence = round(confidence.item() * 100, 2)
 
-        explanation = (
-            "Model analyzed global pixel patterns and texture inconsistencies. "
-            "Highlighted regions show strongest activation."
-        )
-
-        # GradCAM
+        # 🔹 GRADCAM
         marked_image = generate_gradcam(model, tensor, original)
-
         output_name = "marked_" + filename
         output_path = os.path.join(OUTPUT_FOLDER, output_name)
-
         cv2.imwrite(output_path, marked_image)
 
+        # 🔹 OCR TEXT EXTRACTION
+        extracted_text = pytesseract.image_to_string(image)
+
+        news_ai_result = None
+        fact_result = None
+
+        if extracted_text.strip() != "":
+            news_ai_result = predict_news(extracted_text)
+            fact_result = verify_fact(extracted_text)
+
         return jsonify({
-            "result": result,
-            "confidence": confidence_percent,
-            "explanation": explanation,
+            "image_result": image_result,
+            "image_confidence": image_confidence,
+            "extracted_text": extracted_text,
+            "news_ai_prediction": news_ai_result,
+            "fact_check": fact_result if fact_result else "No fact check found",
             "marked_image": f"/outputs/{output_name}"
         })
 
@@ -86,5 +152,5 @@ def analyze():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
