@@ -13,19 +13,13 @@ import pytesseract
 from model_loader import load_model
 from gradcam import generate_gradcam
 
-#  REMOVE Windows-only Tesseract path
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
 # 🔹 GOOGLE FACT CHECK API KEY
 GOOGLE_API_KEY = "AIzaSyDrUzhbT6CjFG6GA7Hh2G5FNledMb4xW68"
-
 app = Flask(__name__, static_folder="static")
 CORS(app)
 
-# 🔹 Load Image Model
+# 🔹 Load Models
 model = load_model()
-
-# 🔹 Load Fake News NLP Model
 news_model = pickle.load(open("model/fake_news_model.pkl", "rb"))
 vectorizer = pickle.load(open("model/vectorizer.pkl", "rb"))
 
@@ -45,12 +39,12 @@ transform = transforms.Compose([
 def home():
     return "Finderon Backend Running 🚀"
 
-# ---------------- SERVE MARKED IMAGE ----------------
+# ---------------- SERVE IMAGE ----------------
 @app.route("/outputs/<filename>")
 def get_image(filename):
     return send_from_directory(OUTPUT_FOLDER, filename)
 
-# ---------------- FACT CHECK FUNCTION ----------------
+# ---------------- FACT CHECK ----------------
 def verify_fact(claim_text):
     try:
         url = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
@@ -81,7 +75,7 @@ def verify_fact(claim_text):
         return None
 
 
-# ---------------- NEWS PREDICTION FUNCTION ----------------
+# ---------------- NEWS NLP ----------------
 def predict_news(text):
     try:
         text_vector = vectorizer.transform([text])
@@ -89,7 +83,6 @@ def predict_news(text):
         probability = news_model.predict_proba(text_vector)[0]
 
         confidence = max(probability) * 100
-
         result = "Real" if prediction == 1 else "Fake"
 
         return {
@@ -100,7 +93,48 @@ def predict_news(text):
         return None
 
 
-# ---------------- MAIN ANALYZE ROUTE ----------------
+# ---------------- CREDIBILITY SCORE ----------------
+def calculate_credibility(image_result,
+                          news_ai_result,
+                          fact_result):
+
+    score = 100
+
+    # 🔹 Image impact
+    if image_result == "Fake":
+        score -= 30
+
+    # 🔹 NLP impact
+    if news_ai_result:
+        if news_ai_result["result"] == "Fake":
+            score -= 25
+        else:
+            score += 10
+
+    # 🔹 Fact Check impact
+    if isinstance(fact_result, dict):
+        rating = fact_result["rating"].lower()
+
+        if "false" in rating:
+            score -= 50
+        elif "true" in rating:
+            score += 20
+        elif "misleading" in rating:
+            score -= 30
+
+    score = max(0, min(100, score))
+
+    if score >= 70:
+        status = "Likely Real"
+    elif score >= 40:
+        status = "Suspicious / Unverified"
+    else:
+        status = "Likely Fake"
+
+    return score, status
+
+
+# ---------------- MAIN ROUTE ----------------
 @app.route("/analyze", methods=["POST"])
 def analyze():
     try:
@@ -109,7 +143,6 @@ def analyze():
 
         file = request.files['image']
         filename = str(uuid.uuid4()) + ".jpg"
-
         input_path = os.path.join(UPLOAD_FOLDER, filename)
         file.save(input_path)
 
@@ -118,7 +151,7 @@ def analyze():
 
         tensor = transform(image).unsqueeze(0)
 
-        # 🔹 IMAGE AI PREDICTION
+        # 🔹 IMAGE AI
         with torch.no_grad():
             output = model(tensor)
             probs = torch.softmax(output, dim=1)
@@ -133,7 +166,7 @@ def analyze():
         output_path = os.path.join(OUTPUT_FOLDER, output_name)
         cv2.imwrite(output_path, marked_image)
 
-        # 🔹 OCR TEXT EXTRACTION (SAFE)
+        # 🔹 OCR
         try:
             extracted_text = pytesseract.image_to_string(image)
         except:
@@ -146,12 +179,20 @@ def analyze():
             news_ai_result = predict_news(extracted_text)
             fact_result = verify_fact(extracted_text)
 
+        # 🔹 FINAL SCORE
+        credibility_score, final_status = calculate_credibility(
+            image_result,
+            news_ai_result,
+            fact_result
+        )
+
         return jsonify({
             "image_result": image_result,
             "image_confidence": image_confidence,
-            "extracted_text": extracted_text,
             "news_ai_prediction": news_ai_result,
             "fact_check": fact_result if fact_result else "No fact check found",
+            "credibility_score": credibility_score,
+            "final_status": final_status,
             "marked_image": f"/outputs/{output_name}"
         })
 
