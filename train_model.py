@@ -3,54 +3,48 @@ import torch.nn as nn
 import torch.optim as optim
 from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader
+from sklearn.metrics import accuracy_score
 
-# Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Image transforms
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
-    transforms.ToTensor()
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(10),
+    transforms.ColorJitter(brightness=0.2),
+    transforms.ToTensor(),
 ])
 
-# Load dataset
-train_dataset = datasets.ImageFolder("dataset/train", transform=transform)
-val_dataset = datasets.ImageFolder("dataset/val", transform=transform)
+train_data = datasets.ImageFolder("dataset/train", transform=transform)
+val_data = datasets.ImageFolder("dataset/val", transform=transform)
 
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=16)
+train_loader = DataLoader(train_data, batch_size=16, shuffle=True)
+val_loader = DataLoader(val_data, batch_size=16)
 
-# Load ResNet18
-model = models.resnet18(pretrained=True)
+model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
 model.fc = nn.Linear(model.fc.in_features, 2)
 model = model.to(device)
 
-# Loss & Optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
-# Training loop
-num_epochs = 3
-
-for epoch in range(num_epochs):
+for epoch in range(5):
     model.train()
-    running_loss = 0.0
+    total_loss = 0
 
-    for images, labels in train_loader:
-        images, labels = images.to(device), labels.to(device)
+    for imgs, labels in train_loader:
+        imgs, labels = imgs.to(device), labels.to(device)
 
         optimizer.zero_grad()
-        outputs = model(images)
+        outputs = model(imgs)
         loss = criterion(outputs, labels)
         loss.backward()
         optimizer.step()
 
-        running_loss += loss.item()
+        total_loss += loss.item()
 
-    print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {running_loss/len(train_loader):.4f}")
+    print(f"Epoch {epoch+1}, Loss: {total_loss/len(train_loader)}")
 
-print("Training finished!")
-
-# SAVE MODEL
+# Save model
 torch.save(model.state_dict(), "model_weight.pth")
-print("Model saved successfully!")
+print("Training completed successfully!")

@@ -1,6 +1,10 @@
-fastapi
-uvicorn
-torch==2.2.2
-torchvision==0.17.2
+flask
+flask-cors
+torch
+torchvision
+opencv-python
 pillow
-python-multipart
+numpy
+matplotlib
+grad-cam
+scikit-learn
