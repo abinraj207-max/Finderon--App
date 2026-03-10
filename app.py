@@ -60,11 +60,18 @@ def analyze():
         result = "Fake" if pred.item() == 0 else "Real"
         confidence_percent = round(confidence.item() * 100, 2)
 
-        explanation = (
-            "Model analyzed global pixel patterns and texture inconsistencies. "
-            "Highlighted regions show strongest activation."
-        )
-
+        if result == "Fake":
+            explanation = (
+        "This image is AI-generated.\n"
+        "The model detected artificial texture patterns and synthetic pixel structures.\n"
+        "Highlighted regions show manipulation indicators."
+    )
+        else:
+            explanation = (
+        "This image appears to be real.\n"
+        "Pixel distribution and texture patterns are consistent with natural photography.\n"
+        "No strong AI-generation artifacts detected."
+    )
         # GradCAM
         marked_image = generate_gradcam(model, tensor, original)
 
