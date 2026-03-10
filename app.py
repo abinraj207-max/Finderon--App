@@ -3,12 +3,12 @@ from flask_cors import CORS
 import torch
 from torchvision import transforms
 from PIL import Image
-import cv2
+# import cv2
 import os
 import uuid
 
 from model_loader import load_model
-from gradcam import generate_gradcam
+# from gradcam import generate_gradcam
 
 app = Flask(__name__)
 CORS(app)
@@ -88,12 +88,12 @@ def analyze():
             )
 
         # -------- GradCAM --------
-        marked_image = generate_gradcam(model, tensor, original)
+        # marked_image = generate_gradcam(model, tensor, original)
 
-        output_name = "marked_" + filename
-        output_path = os.path.join(OUTPUT_FOLDER, output_name)
+        # output_name = "marked_" + filename
+        # output_path = os.path.join(OUTPUT_FOLDER, output_name)
 
-        cv2.imwrite(output_path, marked_image)
+        # cv2.imwrite(output_path, marked_image)
 
         return jsonify({
             "result": result,
